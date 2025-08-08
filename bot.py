@@ -20,20 +20,25 @@ PETS = [
 ]
 
 help_mode_users = set()
-user_messages = []
+user_message_times = {}
 
 spam_responses = [
     "Ты че, долбоёб? Не спамь!",
     "Блядь, хватит уже флудить, дебил.",
     "Уебок, перестань писать столько хуни!",
     "Сука, прекрати этот спам, мудак!",
-    "Идиот, да хватит уже тыкать сюда свои сообщения!"
+    "Идиот, да хватит уже тыкать сюда свои сообщения!",
+    "Долбаёб, когда уже остановишься?",
+    "Пиздуй с этим спамом, пёс!",
+    "Клоун, перестань пихать сообщения!",
+    "Отвали, пиздун! Хватит флудить!",
+    "Мудак, ты реально не понимаешь, что это спам?"
 ]
-
-user_message_times = {}
 
 @bot.message_handler(commands=['start'])
 def start(message):
+    if message.chat.id in help_mode_users:
+        help_mode_users.remove(message.chat.id)
     markup = ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
     buttons = [KeyboardButton(name) for name, _ in PETS]
     markup.add(*buttons)
