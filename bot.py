@@ -2,6 +2,8 @@ import telebot
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 import time
 import random
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 TOKEN = "8265510445:AAHdE3q8Mdpy9Gf0pTtVXdbgz6opxXh0YKE"
 bot = telebot.TeleBot(TOKEN)
@@ -34,6 +36,18 @@ spam_responses = [
     "Отвали, пиздун! Хватит флудить!",
     "Мудак, ты реально не понимаешь, что это спам?"
 ]
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b'Bot is running')
+
+def run_server():
+    server = HTTPServer(('0.0.0.0', 8000), Handler)
+    server.serve_forever()
+
+threading.Thread(target=run_server).start()
 
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -75,7 +89,7 @@ def handle_all_messages(message):
     now = time.time()
     if user_id not in user_message_times:
         user_message_times[user_id] = []
-    user_message_times[user_id] = [t for t in user_message_times[user_id] if now - t < 5]
+    user_message_times[user_id] = [t for t in user_message_times[user_id] if now - t < 60]
     user_message_times[user_id].append(now)
     if len(user_message_times[user_id]) > 20:
         bot.send_message(user_id, random.choice(spam_responses))
