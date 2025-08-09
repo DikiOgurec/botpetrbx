@@ -1,11 +1,12 @@
-import telebot
-from telebot.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+import os
 import time
 import random
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from flask import Flask
+import telebot
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 
-TOKEN = "8265510445:AAHdE3q8Mdpy9Gf0pTtVXdbgz6opxXh0YKE"
+TOKEN = os.getenv("BOT_TOKEN", "8265510445:AAHdE3q8Mdpy9Gf0pTtVXdbgz6opxXh0YKE")
 bot = telebot.TeleBot(TOKEN)
 
 PETS = [
@@ -23,6 +24,7 @@ PETS = [
 
 help_mode_users = set()
 user_message_times = {}
+spam_cooldown = {}
 
 spam_responses = [
     "Ты че, долбоёб? Не спамь!",
@@ -37,17 +39,8 @@ spam_responses = [
     "Мудак, ты реально не понимаешь, что это спам?"
 ]
 
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b'Bot is running')
-
-def run_server():
-    server = HTTPServer(('0.0.0.0', 8000), Handler)
-    server.serve_forever()
-
-threading.Thread(target=run_server).start()
+def normalize_text(s):
+    return s.strip().lower()
 
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -56,55 +49,78 @@ def start(message):
     markup = ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
     buttons = [KeyboardButton(name) for name, _ in PETS]
     markup.add(*buttons)
-    bot.send_message(
-        message.chat.id,
-        "Привет! Я бот, который помогает получить питомцев в Grow a Garden Roblox.\nВыбери пета:",
-        reply_markup=markup
-    )
+    bot.send_message(message.chat.id, "Привет! Я бот, который помогает получить питомцев в Grow a Garden Roblox.\nВыбери пета:", reply_markup=markup)
 
 @bot.message_handler(commands=['help'])
 def help_command(message):
     help_mode_users.add(message.chat.id)
     markup = ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add(KeyboardButton("📨 Отправить"))
-    bot.send_message(
-        message.chat.id,
-        "Опиши проблему или вопрос. Когда закончишь — нажми кнопку '📨 Отправить'.",
-        reply_markup=markup
-    )
+    bot.send_message(message.chat.id, "Опиши проблему или вопрос. Когда закончишь — нажми кнопку '📨 Отправить'.", reply_markup=markup)
+
+@bot.message_handler(commands=['razdacha'])
+def razdacha(message):
+    pet_name, pet_link = random.choice(PETS)
+    bot.send_message(message.chat.id, f"Случайная раздача: {pet_name}\nЗайди на VIP-сервер по ссылке:\n{pet_link}", reply_markup=ReplyKeyboardRemove())
 
 @bot.message_handler(func=lambda m: m.text == "📨 Отправить")
 def send_help(message):
     if message.chat.id in help_mode_users:
         help_mode_users.remove(message.chat.id)
-    bot.send_message(
-        message.chat.id,
-        "Спасибо! Ваше сообщение отправлено, админы скоро свяжутся с вами.",
-        reply_markup=ReplyKeyboardRemove()
-    )
+    bot.send_message(message.chat.id, "Спасибо! Ваше сообщение отправлено, админы скоро свяжутся с вами.", reply_markup=ReplyKeyboardRemove())
 
 @bot.message_handler(func=lambda m: True)
 def handle_all_messages(message):
     user_id = message.chat.id
     now = time.time()
+    window = 60
+    threshold = 20
+    cooldown_seconds = 30
+
     if user_id not in user_message_times:
         user_message_times[user_id] = []
-    user_message_times[user_id] = [t for t in user_message_times[user_id] if now - t < 60]
+    user_message_times[user_id] = [t for t in user_message_times[user_id] if now - t < window]
     user_message_times[user_id].append(now)
-    if len(user_message_times[user_id]) > 20:
-        bot.send_message(user_id, random.choice(spam_responses))
+
+    if user_id in spam_cooldown and now < spam_cooldown[user_id]:
         return
+
+    if len(user_message_times[user_id]) > threshold:
+        bot.send_message(user_id, random.choice(spam_responses))
+        spam_cooldown[user_id] = now + cooldown_seconds
+        return
+
     if user_id in help_mode_users:
         return
-    text = message.text.strip()
+
+    text = normalize_text(message.text or "")
+
     for pet_name, pet_link in PETS:
-        if text == pet_name:
-            bot.send_message(
-                user_id,
-                f"Чтобы получить {pet_name}, зайди на VIP-сервер бота по ссылке:\n{pet_link}",
-                reply_markup=ReplyKeyboardRemove()
-            )
+        plain_name = normalize_text(pet_name.split(" ", 1)[-1])
+        if text == normalize_text(pet_name) or text == plain_name:
+            bot.send_message(user_id, f"Чтобы получить {pet_name}, зайди на VIP-сервер бота по ссылке:\n{pet_link}", reply_markup=ReplyKeyboardRemove())
             return
+
     bot.send_message(user_id, "Я тебя не понимаю. Напиши /start или /help.")
 
-bot.polling()
+def run_bot():
+    try:
+        bot.remove_webhook()
+    except:
+        pass
+    while True:
+        try:
+            bot.polling(none_stop=True, timeout=20)
+        except:
+            time.sleep(5)
+
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is running"
+
+if __name__ == '__main__':
+    threading.Thread(target=run_bot).start()
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
